@@ -369,9 +369,9 @@ int main(int argc, char *argv[])
 			FATAL("Please specify -4 target ipv4 address. Like: -4 "
 			      "127.0.0.1:22");
 		}
-	}
-	if (memcmp(&state->remote_v6_addr, &zero, sizeof(zero)) == 0) {
-		FATAL("Please specify -6 target address. Like: -6 [::1]:22");
+		if (memcmp(&state->remote_v6_addr, &zero, sizeof(zero)) == 0) {
+			FATAL("Please specify -6 target address. Like: -6 [::1]:22");
+		}
 	}
 
 	if (networks_fname == NULL) {
