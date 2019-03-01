@@ -14,6 +14,7 @@ struct state
 	int quiet;
 	int do_not_sandbox;
 	int force_real_client_port;
+	int forward_to_proxy_ip;
 
 	ipaddr remote_v4_addr;
 	ipaddr remote_v6_addr;
@@ -109,7 +110,11 @@ coroutine void new_connection(int cd, struct state *state)
 	char addr_buf[256];
 	ipaddr remote_addr;
 	if (strcasecmp(words[1], "TCP4") == 0) {
-		remote_addr = state->remote_v4_addr;
+		if(state->forward_to_proxy_ip == 1){
+			remote_addr = words[3]
+		} else {
+			remote_addr = state->remote_v4_addr;
+		}
 		if (ipfamily(remote_addr) == AF_INET) {
 			snprintf(addr_buf, sizeof(addr_buf), "%s:%s", words[2],
 				 port);
@@ -258,6 +263,7 @@ int main(int argc, char *argv[])
 		{"listen", required_argument, 0, 'l'},
 		{"target-v4", required_argument, 0, '4'},
 		{"target-v6", required_argument, 0, '6'},
+		{"target-proxy-ip", no_argument, 0, 'x'},
 		{NULL, 0, 0, 0}};
 
 	const char *optstring = optstring_from_long_options(long_options);
@@ -326,7 +332,7 @@ int main(int argc, char *argv[])
 				      optarg);
 			}
 			break;
-
+				
 		case '4':
 			state->remote_v4_addr = ipaddr_parse(optarg, 0);
 			if (errno != 0) {
@@ -341,6 +347,10 @@ int main(int argc, char *argv[])
 				FATAL("%s is not a valid target address",
 				      optarg);
 			}
+			break;
+		
+		case 'x':
+			state->forward_to_proxy_ip = 1;
 			break;
 		}
 	}
@@ -427,106 +437,108 @@ int main(int argc, char *argv[])
 
 	ipaddr targets[2];
 	int targets_len = 1;
-	targets[0] = state->remote_v4_addr;
+	if(state->forward_to_proxy_ip != 1){
+		targets[0] = state->remote_v4_addr;
 
-	if (memcmp(&state->remote_v4_addr, &state->remote_v6_addr,
-		   sizeof(ipaddr)) != 0) {
-		targets_len = 2;
-		targets[1] = state->remote_v6_addr;
-	}
-
-	int t;
-	for (t = 0; t < targets_len; t++) {
-		ipaddr target_addr = targets[t];
-		int r = check_ip_route_get_local(target_addr);
-		if (r != 0) {
-			fprintf(stderr,
-				"[!] FAILED: Target %s isn't on a local "
-				"machine. This "
-				"program will likely NOT WORK.\n",
-				ipaddrstr_noport(target_addr, NULL));
-		} else {
-			fprintf(stderr,
-				"[+] OK. Routing to %s points to a local "
-				"machine.\n",
-				ipaddrstr_noport(target_addr, NULL));
+		if (memcmp(&state->remote_v4_addr, &state->remote_v6_addr,
+			   sizeof(ipaddr)) != 0) {
+			targets_len = 2;
+			targets[1] = state->remote_v6_addr;
 		}
 
-		r = check_direct_connect(target_addr);
-		if (r < 0 && errno == ECONNREFUSED) {
-			fprintf(stderr,
-				"[!] FAILED: Target server %s seems to be "
-				"down. This "
-				"program will likely NOT WORK.\n",
-				ipaddrstr_port(target_addr, NULL));
-		} else if (r < 0) {
-			fprintf(stderr,
-				"[!] FAILED: Unable to connect() to target "
-				"server %s. "
-				"Error: %s. This program will likely NOT "
-				"WORK.\n",
-				ipaddrstr_port(target_addr, NULL),
-				strerror(errno));
-		} else {
-			fprintf(stderr,
-				"[+] OK. Target server %s is up and reachable "
-				"using "
-				"conventional connection.\n",
-				ipaddrstr_port(target_addr, NULL));
-		}
-
-		ipaddr fake_source_addr;
-		if (ipfamily(target_addr) == AF_INET) {
-			fake_source_addr = ipaddr_parse("192.0.2.1", 1);
-		} else {
-			fake_source_addr = ipaddr_parse("[2001:0db8::1]", 1);
-		}
-
-		r = check_spoofed_connect(fake_source_addr, target_addr,
-					  state->mark);
-		if (r == -2) {
-			PFATAL("Can't set IP_TRANSPARENT socket flag.\n"
-			       "\tPerhaps it's a permissions problem. Are you "
-			       "root or "
-			       "have CAP_NET_ADMIN capability?\n");
-		} else if (r < 0 && errno == ECONNREFUSED) {
-			fprintf(stderr,
-				"[!] FAILED: Target server %s seems to be "
-				"down. This "
-				"program will likely NOT WORK.\n",
-				ipaddrstr_port(target_addr, NULL));
-		} else if (r < 0) {
-			fprintf(stderr,
-				"[!] FAILED: Unable to do spoofed connect() to "
-				"target "
-				"server %s. This program will likely NOT "
-				"WORK.\n",
-				ipaddrstr_port(target_addr, NULL));
-			fprintf(stderr,
-				"[!] FAILED: Check if iptables and routing are "
-				"set "
-				"correctly!\n");
-			if (ipfamily(target_addr) == AF_INET) {
+		int t;
+		for (t = 0; t < targets_len; t++) {
+			ipaddr target_addr = targets[t];
+			int r = check_ip_route_get_local(target_addr);
+			if (r != 0) {
 				fprintf(stderr,
-					"[!] FAILED: Also make sure you have a "
-					"\"route_localhost\" "
-					"set on outbound interface, like:\n");
-				fprintf(stderr,
-					"echo 1 | sudo tee "
-					"/proc/sys/net/ipv4/conf/eth0/"
-					"route_localnet\n");
+					"[!] FAILED: Target %s isn't on a local "
+					"machine. This "
+					"program will likely NOT WORK.\n",
+					ipaddrstr_noport(target_addr, NULL));
 			} else {
 				fprintf(stderr,
-					"[!] FAILED: Also make sure you have a "
-					"valid "
-					"IPv6 default route set!\n");
+					"[+] OK. Routing to %s points to a local "
+					"machine.\n",
+					ipaddrstr_noport(target_addr, NULL));
 			}
-		} else {
-			fprintf(stderr,
-				"[+] OK. Target server %s is up and reachable "
-				"using "
-				"spoofed connection.\n",
-				ipaddrstr_port(target_addr, NULL));
+
+			r = check_direct_connect(target_addr);
+			if (r < 0 && errno == ECONNREFUSED) {
+				fprintf(stderr,
+					"[!] FAILED: Target server %s seems to be "
+					"down. This "
+					"program will likely NOT WORK.\n",
+					ipaddrstr_port(target_addr, NULL));
+			} else if (r < 0) {
+				fprintf(stderr,
+					"[!] FAILED: Unable to connect() to target "
+					"server %s. "
+					"Error: %s. This program will likely NOT "
+					"WORK.\n",
+					ipaddrstr_port(target_addr, NULL),
+					strerror(errno));
+			} else {
+				fprintf(stderr,
+					"[+] OK. Target server %s is up and reachable "
+					"using "
+					"conventional connection.\n",
+					ipaddrstr_port(target_addr, NULL));
+			}
+
+			ipaddr fake_source_addr;
+			if (ipfamily(target_addr) == AF_INET) {
+				fake_source_addr = ipaddr_parse("192.0.2.1", 1);
+			} else {
+				fake_source_addr = ipaddr_parse("[2001:0db8::1]", 1);
+			}
+
+			r = check_spoofed_connect(fake_source_addr, target_addr,
+						  state->mark);
+			if (r == -2) {
+				PFATAL("Can't set IP_TRANSPARENT socket flag.\n"
+				       "\tPerhaps it's a permissions problem. Are you "
+				       "root or "
+				       "have CAP_NET_ADMIN capability?\n");
+			} else if (r < 0 && errno == ECONNREFUSED) {
+				fprintf(stderr,
+					"[!] FAILED: Target server %s seems to be "
+					"down. This "
+					"program will likely NOT WORK.\n",
+					ipaddrstr_port(target_addr, NULL));
+			} else if (r < 0) {
+				fprintf(stderr,
+					"[!] FAILED: Unable to do spoofed connect() to "
+					"target "
+					"server %s. This program will likely NOT "
+					"WORK.\n",
+					ipaddrstr_port(target_addr, NULL));
+				fprintf(stderr,
+					"[!] FAILED: Check if iptables and routing are "
+					"set "
+					"correctly!\n");
+				if (ipfamily(target_addr) == AF_INET) {
+					fprintf(stderr,
+						"[!] FAILED: Also make sure you have a "
+						"\"route_localhost\" "
+						"set on outbound interface, like:\n");
+					fprintf(stderr,
+						"echo 1 | sudo tee "
+						"/proc/sys/net/ipv4/conf/eth0/"
+						"route_localnet\n");
+				} else {
+					fprintf(stderr,
+						"[!] FAILED: Also make sure you have a "
+						"valid "
+						"IPv6 default route set!\n");
+				}
+			} else {
+				fprintf(stderr,
+					"[+] OK. Target server %s is up and reachable "
+					"using "
+					"spoofed connection.\n",
+					ipaddrstr_port(target_addr, NULL));
+			}
 		}
 	}
 
