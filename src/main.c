@@ -111,7 +111,7 @@ coroutine void new_connection(int cd, struct state *state)
 	ipaddr remote_addr;
 	if (strcasecmp(words[1], "TCP4") == 0) {
 		if(state->forward_to_proxy_ip == 1){
-			remote_addr = = ipaddr_parse(words[3], 0);
+			remote_addr = ipaddr_parse(words[3], 0);
 		} else {
 			remote_addr = state->remote_v4_addr;
 		}
