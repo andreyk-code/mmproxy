@@ -111,7 +111,7 @@ coroutine void new_connection(int cd, struct state *state)
 	ipaddr remote_addr;
 	if (strcasecmp(words[1], "TCP4") == 0) {
 		if(state->forward_to_proxy_ip == 1){
-			remote_addr = words[3]
+			remote_addr = = ipaddr_parse(words[3], 0);
 		} else {
 			remote_addr = state->remote_v4_addr;
 		}
@@ -364,9 +364,11 @@ int main(int argc, char *argv[])
 		FATAL("Please specify -l listen address. Like: -l "
 		      "0.0.0.0:1234");
 	}
-	if (memcmp(&state->remote_v4_addr, &zero, sizeof(zero)) == 0) {
-		FATAL("Please specify -4 target ipv4 address. Like: -4 "
-		      "127.0.0.1:22");
+	if(state->forward_to_proxy_ip != 1){
+		if (memcmp(&state->remote_v4_addr, &zero, sizeof(zero)) == 0) {
+			FATAL("Please specify -4 target ipv4 address. Like: -4 "
+			      "127.0.0.1:22");
+		}
 	}
 	if (memcmp(&state->remote_v6_addr, &zero, sizeof(zero)) == 0) {
 		FATAL("Please specify -6 target address. Like: -6 [::1]:22");
