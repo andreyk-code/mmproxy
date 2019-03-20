@@ -108,10 +108,12 @@ coroutine void new_connection(int cd, struct state *state)
 	}
 
 	char addr_buf[256];
+	char remote_addr_buf[256];
 	ipaddr remote_addr;
 	if (strcasecmp(words[1], "TCP4") == 0) {
 		if(state->forward_to_proxy_ip == 1){
-			remote_addr = ipaddr_parse(words[3], 0);
+			snprintf(remote_addr_buf, sizeof(remote_addr_buf), "%s:%s", words[3], words[5]); 
+			remote_addr = ipaddr_parse(remote_addr_buf, 0);
 		} else {
 			remote_addr = state->remote_v4_addr;
 		}
